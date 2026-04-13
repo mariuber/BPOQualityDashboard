@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>BPO Quality Governance — Live Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --card: #20232f;
+    --border: #2a2d3a;
+    --blue: #276EF1;
+    --blue-light: #4a8ff5;
+    --green: #00c896;
+    --amber: #f5a623;
+    --red: #ff4757;
+    --text: #e8eaf0;
+    --muted: #7c8098;
+    --label: #a0a3b1;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+  /* TOP BAR */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px; background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .logo { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
+  .logo span { color: var(--blue); }
+  .tag { font-size: 10px; font-weight: 600; background: var(--blue); color: #fff;
+    padding: 2px 8px; border-radius: 4px; letter-spacing: 0.05em; }
+  .live-badge { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--green); font-weight: 600; }
+  .pulse { width: 8px; height: 8px; background: var(--green); border-radius: 50%; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.8); } }
+  .topbar-right { display: flex; align-items: center; gap: 16px; }
+  .last-update { font-size: 11px; color: var(--muted); }
+  .filter-row { display: flex; gap: 6px; }
+  .filter-btn { font-size: 11px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); cursor: pointer; transition: all 0.15s; }
+  .filter-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .filter-btn:hover:not(.active) { border-color: var(--blue); color: var(--text); }
+
+  /* LAYOUT */
+  .main { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; max-width: 1400px; margin: 0 auto; }
+
+  /* KPI ROW */
+  .kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .kpi-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; position: relative; overflow: hidden;
+  }
+  .kpi-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    border-radius: 10px 10px 0 0;
+  }
+  .kpi-card.blue::before { background: var(--blue); }
+  .kpi-card.green::before { background: var(--green); }
+  .kpi-card.amber::before { background: var(--amber); }
+  .kpi-card.red::before { background: var(--red); }
+  .kpi-card.purple::before { background: #9b59b6; }
+  .kpi-label { font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: 0.06em; margin-bottom: 6px; }
+  .kpi-value { font-size: 28px; font-weight: 700; line-height: 1; }
+  .kpi-value.blue { color: var(--blue-light); }
+  .kpi-value.green { color: var(--green); }
+  .kpi-value.amber { color: var(--amber); }
+  .kpi-value.red { color: var(--red); }
+  .kpi-value.purple { color: #b07fd4; }
+  .kpi-delta { font-size: 11px; margin-top: 4px; display: flex; align-items: center; gap: 4px; }
+  .kpi-delta.up { color: var(--green); }
+  .kpi-delta.down { color: var(--red); }
+  .kpi-delta.neutral { color: var(--muted); }
+  .kpi-target { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  /* GRID */
+  .content-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .wide { grid-column: 1 / 3; }
+  .full { grid-column: 1 / -1; }
+
+  /* PANEL */
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .panel-header { padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; }
+  .panel-title { font-size: 12px; font-weight: 600; color: var(--label); letter-spacing: 0.05em; }
+  .panel-action { font-size: 10px; color: var(--blue); cursor: pointer; }
+  .panel-body { padding: 16px; }
+
+  /* BPO TABLE */
+  .bpo-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .bpo-table th { text-align: left; padding: 6px 10px; color: var(--muted);
+    font-size: 10px; font-weight: 600; letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border); }
+  .bpo-table td { padding: 8px 10px; border-bottom: 1px solid rgba(42,45,58,0.6); }
+  .bpo-table tr:last-child td { border-bottom: none; }
+  .bpo-table tr:hover td { background: rgba(39,110,241,0.04); }
+
+  /* TIER BADGE */
+  .tier { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 99px; display: inline-block; }
+  .tier.top { background: rgba(0,200,150,0.15); color: var(--green); }
+  .tier.watch { background: rgba(245,166,35,0.15); color: var(--amber); }
+  .tier.critical { background: rgba(255,71,87,0.15); color: var(--red); }
+
+  /* SCORE BAR */
+  .score-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .score-bar { flex: 1; height: 5px; background: var(--border); border-radius: 99px; overflow: hidden; }
+  .score-bar-fill { height: 100%; border-radius: 99px; transition: width 1.2s ease; }
+  .score-num { font-size: 12px; font-weight: 600; min-width: 36px; text-align: right; }
+
+  /* MINI CHART (sparkline via divs) */
+  .sparkline { display: flex; align-items: flex-end; gap: 2px; height: 32px; }
+  .spark-bar { flex: 1; border-radius: 2px 2px 0 0; min-width: 5px; transition: height 0.3s; }
+
+  /* CSAT GAUGE */
+  .gauge-wrap { display: flex; flex-direction: column; align-items: center; padding: 8px 0; }
+  .gauge-svg { width: 140px; height: 90px; }
+  .gauge-value { font-size: 28px; font-weight: 700; color: var(--text); }
+  .gauge-label { font-size: 10px; color: var(--muted); letter-spacing: 0.05em; margin-top: 2px; }
+  .gauge-target { font-size: 10px; color: var(--muted); }
+
+  /* CALIBRATION RING */
+  .rings-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .ring-item { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .ring-label { font-size: 10px; color: var(--muted); text-align: center; }
+  .ring-val { font-size: 13px; font-weight: 700; }
+
+  /* ALERT FEED */
+  .alert-feed { display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto; }
+  .alert-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
+    background: var(--surface); border-radius: 8px; border-left: 3px solid; }
+  .alert-item.red { border-color: var(--red); }
+  .alert-item.amber { border-color: var(--amber); }
+  .alert-item.green { border-color: var(--green); }
+  .alert-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 3px; flex-shrink: 0; }
+  .alert-dot.red { background: var(--red); }
+  .alert-dot.amber { background: var(--amber); }
+  .alert-dot.green { background: var(--green); }
+  .alert-text { font-size: 11px; line-height: 1.5; color: var(--text); }
+  .alert-time { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  /* DISPUTE CHART */
+  .dispute-bars { display: flex; flex-direction: column; gap: 8px; }
+  .d-row { display: flex; align-items: center; gap: 10px; font-size: 11px; }
+  .d-name { min-width: 48px; color: var(--muted); }
+  .d-bar-wrap { flex: 1; height: 8px; background: var(--border); border-radius: 99px; overflow: hidden; }
+  .d-bar-fill { height: 100%; border-radius: 99px; }
+  .d-pct { min-width: 36px; text-align: right; font-weight: 600; font-size: 11px; }
+
+  /* CADENCE */
+  .cadence-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cadence-chip { display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+    background: var(--surface); border-radius: 6px; border: 1px solid var(--border); font-size: 11px; }
+  .cadence-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .cadence-chip .freq { color: var(--muted); font-size: 10px; }
+
+  /* SCROLL */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo">Uber <span>BPO Quality</span></div>
+    <span class="tag">GOVERNANCE</span>
+  </div>
+  <div class="topbar-right">
+    <div class="filter-row">
+      <button class="filter-btn active" onclick="filterTier('all',this)">All BPOs</button>
+      <button class="filter-btn" onclick="filterTier('top',this)">Top</button>
+      <button class="filter-btn" onclick="filterTier('watch',this)">Watch</button>
+      <button class="filter-btn" onclick="filterTier('critical',this)">Critical</button>
+    </div>
+    <div class="live-badge"><div class="pulse"></div> LIVE</div>
+    <div class="last-update" id="timestamp">Updated just now</div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- KPI ROW -->
+  <div class="kpi-row">
+    <div class="kpi-card green">
+      <div class="kpi-label">AVG CSAT</div>
+      <div class="kpi-value green" id="kpi-csat">3.74</div>
+      <div class="kpi-delta down">▼ 0.06 vs last month</div>
+      <div class="kpi-target">Target: ≥ 4.0</div>
+    </div>
+    <div class="kpi-card amber">
+      <div class="kpi-label">CALIBRATION ATTENDANCE</div>
+      <div class="kpi-value amber" id="kpi-calib">38%</div>
+      <div class="kpi-delta down">▼ 4% vs last month</div>
+      <div class="kpi-target">Target: ≥ 75%</div>
+    </div>
+    <div class="kpi-card red">
+      <div class="kpi-label">HIGH-RISK BPOs</div>
+      <div class="kpi-value red" id="kpi-highrisk">3</div>
+      <div class="kpi-delta neutral">— BPO 4 · BPO 5 · BPO 10</div>
+      <div class="kpi-target">Target: 0</div>
+    </div>
+    <div class="kpi-card blue">
+      <div class="kpi-label">AVG AUDIT COMPLETION</div>
+      <div class="kpi-value blue" id="kpi-audit">79%</div>
+      <div class="kpi-delta up">▲ 2% vs last month</div>
+      <div class="kpi-target">Target: ≥ 90%</div>
+    </div>
+    <div class="kpi-card purple">
+      <div class="kpi-label">AVG DISPUTE RATIO</div>
+      <div class="kpi-value purple" id="kpi-dispute">2.3%</div>
+      <div class="kpi-delta down">▼ 0.3% vs last month</div>
+      <div class="kpi-target">Target: ≤ 2%</div>
+    </div>
+  </div>
+
+  <!-- MAIN GRID -->
+  <div class="content-grid">
+
+    <!-- BPO SCORECARD TABLE — wide -->
+    <div class="panel wide">
+      <div class="panel-header">
+        <span class="panel-title">BPO SCORECARD — SEPTEMBER 2025</span>
+        <span class="panel-action">Export CSV ↗</span>
+      </div>
+      <div class="panel-body" style="padding: 0;">
+        <table class="bpo-table" id="bpo-table">
+          <thead>
+            <tr>
+              <th>BPO</th>
+              <th>Tier</th>
+              <th>Composite CQI</th>
+              <th>CSAT</th>
+              <th>1-Star</th>
+              <th>Calib. Att.</th>
+              <th>Calib. Score</th>
+              <th>Disputes</th>
+              <th>Audit %</th>
+            </tr>
+          </thead>
+          <tbody id="bpo-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ALERT FEED -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">🔔 LIVE ALERTS</span>
+        <span class="panel-action">Mark all read</span>
+      </div>
+      <div class="panel-body">
+        <div class="alert-feed" id="alert-feed"></div>
+      </div>
+    </div>
+
+    <!-- CSAT GAUGE — BPO 4 -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">HIGH-RISK SPOTLIGHT — BPO 4</span>
+      </div>
+      <div class="panel-body">
+        <div class="gauge-wrap">
+          <svg class="gauge-svg" viewBox="0 0 140 90">
+            <defs>
+              <linearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#ff4757"/>
+                <stop offset="50%" stop-color="#f5a623"/>
+                <stop offset="100%" stop-color="#00c896"/>
+              </linearGradient>
+            </defs>
+            <!-- track -->
+            <path d="M 15 80 A 55 55 0 0 1 125 80" fill="none" stroke="#2a2d3a" stroke-width="10" stroke-linecap="round"/>
+            <!-- fill — BPO 4 CSAT 2.5/5 = 50% of arc -->
+            <path id="gauge-arc" d="M 15 80 A 55 55 0 0 1 125 80" fill="none" stroke="url(#gaugeGrad)" stroke-width="10" stroke-linecap="round"
+              stroke-dasharray="173" stroke-dashoffset="87"/>
+            <!-- needle -->
+            <line id="gauge-needle" x1="70" y1="80" x2="70" y2="35" stroke="#ff4757" stroke-width="2.5" stroke-linecap="round"/>
+            <circle cx="70" cy="80" r="5" fill="#ff4757"/>
+            <text x="70" y="68" text-anchor="middle" fill="#ff4757" font-size="16" font-weight="700">2.5</text>
+            <text x="18" y="90" fill="#7c8098" font-size="9">1</text>
+            <text x="118" y="90" fill="#7c8098" font-size="9">5</text>
+            <text x="70" y="90" text-anchor="middle" fill="#7c8098" font-size="9">CSAT</text>
+          </svg>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;">
+          <div style="background:rgba(255,71,87,0.1);border-radius:6px;padding:8px;text-align:center;">
+            <div style="font-size:10px;color:var(--muted);">1-STAR</div>
+            <div style="font-size:20px;font-weight:700;color:var(--red);">33%</div>
+          </div>
+          <div style="background:rgba(255,71,87,0.1);border-radius:6px;padding:8px;text-align:center;">
+            <div style="font-size:10px;color:var(--muted);">CALIB ATT</div>
+            <div style="font-size:20px;font-weight:700;color:var(--red);">10%</div>
+          </div>
+          <div style="background:rgba(255,71,87,0.1);border-radius:6px;padding:8px;text-align:center;">
+            <div style="font-size:10px;color:var(--muted);">DISPUTES</div>
+            <div style="font-size:20px;font-weight:700;color:var(--red);">9%</div>
+          </div>
+          <div style="background:rgba(255,71,87,0.1);border-radius:6px;padding:8px;text-align:center;">
+            <div style="font-size:10px;color:var(--muted);">CQI</div>
+            <div style="font-size:20px;font-weight:700;color:var(--red);">45.2</div>
+          </div>
+        </div>
+        <div style="margin-top:12px;background:rgba(255,71,87,0.08);border:1px solid rgba(255,71,87,0.3);border-radius:6px;padding:10px;">
+          <div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:4px;">⚡ ACTIVE PIP</div>
+          <div style="font-size:11px;color:var(--label);line-height:1.5;">Formal PIP issued. 2-week leadership checkpoint pending. Weekly calibration mandated with Uber QA present.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CALIBRATION ATTENDANCE BARS -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">CALIBRATION ATTENDANCE % BY BPO</span>
+        <span style="font-size:10px;color:var(--muted);">Target 75%</span>
+      </div>
+      <div class="panel-body">
+        <div class="dispute-bars" id="calib-bars"></div>
+        <div style="margin-top:12px;display:flex;align-items:center;gap:6px;">
+          <div style="flex:1;height:1px;background:var(--border);"></div>
+          <div style="font-size:10px;color:var(--amber);">Target 75%</div>
+          <div style="flex:1;height:1px;background:var(--amber);"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DISPUTE RATIO -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">DISPUTE RATIO % BY BPO</span>
+        <span style="font-size:10px;color:var(--muted);">Target ≤ 2%</span>
+      </div>
+      <div class="panel-body">
+        <div class="dispute-bars" id="dispute-bars"></div>
+      </div>
+    </div>
+
+    <!-- GOVERNANCE CADENCE -->
+    <div class="panel full">
+      <div class="panel-header">
+        <span class="panel-title">GOVERNANCE CADENCE — NEXT ACTIONS</span>
+        <span class="panel-action">View calendar ↗</span>
+      </div>
+      <div class="panel-body">
+        <div class="cadence-row">
+          <div class="cadence-chip"><div class="cadence-dot" style="background:var(--red);"></div><div><div>Daily 1-Star &amp; Dispute flags</div><div class="freq">DAILY · Automated</div></div></div>
+          <div class="cadence-chip"><div class="cadence-dot" style="background:var(--blue);"></div><div><div>CSAT + Audit Digest</div><div class="freq">WEEKLY · Mon 9am</div></div></div>
+          <div class="cadence-chip"><div class="cadence-dot" style="background:var(--amber);"></div><div><div>Calibration Session (all BPOs)</div><div class="freq">BI-WEEKLY · Mandatory ≥75%</div></div></div>
+          <div class="cadence-chip"><div class="cadence-dot" style="background:#9b59b6;"></div><div><div>Monthly Business Review + RCA</div><div class="freq">MONTHLY · Named owner required</div></div></div>
+          <div class="cadence-chip"><div class="cadence-dot" style="background:var(--green);"></div><div><div>CQI Benchmark Review</div><div class="freq">QUARTERLY · All stakeholders</div></div></div>
+          <div class="cadence-chip" style="border-color:var(--red);"><div class="cadence-dot" style="background:var(--red);"></div><div><div>BPO 4 · PIP Checkpoint</div><div class="freq">IN 14 DAYS · Overdue warning</div></div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const BPO_DATA = [
+  { name:"BPO 1",  tier:"watch",    csat:4.1, star1:5,  calib_att:65, calib_score:82, dispute:1.2, audit:75  },
+  { name:"BPO 2",  tier:"watch",    csat:3.9, star1:8,  calib_att:60, calib_score:77, dispute:0.8, audit:60  },
+  { name:"BPO 3",  tier:"top",      csat:4.1, star1:5,  calib_att:88, calib_score:89, dispute:0.8, audit:94  },
+  { name:"BPO 4",  tier:"critical", csat:2.5, star1:33, calib_att:10, calib_score:60, dispute:9.0, audit:91  },
+  { name:"BPO 5",  tier:"critical", csat:3.0, star1:22, calib_att:40, calib_score:50, dispute:2.0, audit:88  },
+  { name:"BPO 6",  tier:"watch",    csat:3.5, star1:15, calib_att:57, calib_score:60, dispute:3.0, audit:75  },
+  { name:"BPO 7",  tier:"watch",    csat:3.1, star1:17, calib_att:80, calib_score:75, dispute:1.0, audit:50  },
+  { name:"BPO 8",  tier:"top",      csat:4.4, star1:4,  calib_att:75, calib_score:80, dispute:2.0, audit:80  },
+  { name:"BPO 9",  tier:"watch",    csat:3.7, star1:10, calib_att:40, calib_score:55, dispute:1.5, audit:105 },
+  { name:"BPO 10", tier:"critical", csat:3.2, star1:25, calib_att:20, calib_score:55, dispute:0.0, audit:75  },
+  { name:"BPO 11", tier:"watch",    csat:4.0, star1:6,  calib_att:50, calib_score:78, dispute:1.5, audit:87  },
+  { name:"BPO 12", tier:"top",      csat:4.2, star1:4,  calib_att:60, calib_score:80, dispute:1.2, audit:98  },
+  { name:"BPO 13", tier:"watch",    csat:3.9, star1:11, calib_att:70, calib_score:60, dispute:3.0, audit:45  },
+];
+
+function cqi(d) {
+  const s = (d.csat/5)*30 + (1 - d.star1/100)*15 + (d.calib_att/100)*25 + (d.calib_score/100)*20 + (1 - Math.min(d.dispute/10,1))*10;
+  return Math.round(s*10)/10;
+}
+
+function tierLabel(t) {
+  if(t==='top') return '<span class="tier top">TOP</span>';
+  if(t==='watch') return '<span class="tier watch">WATCH</span>';
+  return '<span class="tier critical">CRITICAL</span>';
+}
+
+function scoreColor(v, low, mid) {
+  if(v >= mid) return '#00c896';
+  if(v >= low) return '#f5a623';
+  return '#ff4757';
+}
+
+function renderTable(filter='all') {
+  const rows = BPO_DATA.filter(d => filter==='all' || d.tier===filter);
+  const tbody = document.getElementById('bpo-tbody');
+  tbody.innerHTML = rows.map(d => {
+    const q = cqi(d);
+    const csatColor = scoreColor(d.csat, 3.5, 4.0);
+    const calibColor = scoreColor(d.calib_att, 40, 75);
+    const qColor = scoreColor(q, 68, 85);
+    return `<tr>
+      <td style="font-weight:600;">${d.name}</td>
+      <td>${tierLabel(d.tier)}</td>
+      <td>
+        <div class="score-bar-wrap">
+          <div class="score-bar"><div class="score-bar-fill" style="width:${q}%;background:${qColor};"></div></div>
+          <div class="score-num" style="color:${qColor};">${q}</div>
+        </div>
+      </td>
+      <td style="color:${csatColor};font-weight:600;">${d.csat}</td>
+      <td style="color:${d.star1>15?'#ff4757':d.star1>8?'#f5a623':'#00c896'};font-weight:600;">${d.star1}%</td>
+      <td style="color:${calibColor};font-weight:600;">${d.calib_att}%</td>
+      <td style="color:${scoreColor(d.calib_score,55,75)};">${d.calib_score}%</td>
+      <td style="color:${d.dispute>3?'#ff4757':d.dispute>2?'#f5a623':'#00c896'};font-weight:600;">${d.dispute}%</td>
+      <td style="color:${d.audit>=90?'#00c896':d.audit>=70?'#f5a623':'#ff4757'};">${d.audit}%</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderCalibBars() {
+  const el = document.getElementById('calib-bars');
+  el.innerHTML = BPO_DATA.sort((a,b)=>b.calib_att-a.calib_att).map(d => {
+    const color = scoreColor(d.calib_att, 40, 75);
+    return `<div class="d-row">
+      <div class="d-name">${d.name}</div>
+      <div class="d-bar-wrap"><div class="d-bar-fill" style="width:${d.calib_att}%;background:${color};height:8px;border-radius:99px;"></div></div>
+      <div class="d-pct" style="color:${color};">${d.calib_att}%</div>
+    </div>`;
+  }).join('');
+}
+
+function renderDisputeBars() {
+  const el = document.getElementById('dispute-bars');
+  el.innerHTML = [...BPO_DATA].sort((a,b)=>b.dispute-a.dispute).map(d => {
+    const color = d.dispute>3?'#ff4757':d.dispute>2?'#f5a623':'#00c896';
+    return `<div class="d-row">
+      <div class="d-name">${d.name}</div>
+      <div class="d-bar-wrap"><div class="d-bar-fill" style="width:${Math.min(d.dispute/10*100,100)}%;background:${color};height:8px;border-radius:99px;"></div></div>
+      <div class="d-pct" style="color:${color};">${d.dispute}%</div>
+    </div>`;
+  }).join('');
+}
+
+const ALERTS = [
+  { type:'red',  text:'BPO 4 — 1-Star spike detected: 3 new reviews flagged in last hour. RCA required within 24h.', time:'2 min ago' },
+  { type:'red',  text:'BPO 5 — Calibration attendance at 40%. Below minimum threshold. Escalation triggered.', time:'18 min ago' },
+  { type:'amber', text:'BPO 10 — Calibration score 55%. Drift alert: >10pts below last month\'s score.', time:'1h ago' },
+  { type:'amber', text:'BPO 6 — Dispute ratio at 3.0%. Exceeds 2% SLA threshold. Named owner: unassigned.', time:'2h ago' },
+  { type:'amber', text:'BPO 13 — Audit completion 45%. Below 70% warning level.', time:'3h ago' },
+  { type:'green', text:'BPO 3 — Monthly Business Review completed. CQI 96.2. No action required.', time:'4h ago' },
+  { type:'green', text:'BPO 8 — Calibration session completed. 75% attendance. Score: 80%.', time:'6h ago' },
+];
+
+function renderAlerts() {
+  document.getElementById('alert-feed').innerHTML = ALERTS.map(a =>
+    `<div class="alert-item ${a.type}">
+      <div class="alert-dot ${a.type}"></div>
+      <div><div class="alert-text">${a.text}</div><div class="alert-time">${a.time}</div></div>
+    </div>`
+  ).join('');
+}
+
+function filterTier(tier, btn) {
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTable(tier);
+}
+
+function updateTimestamp() {
+  const now = new Date();
+  document.getElementById('timestamp').textContent = 'Updated ' + now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+// Simulate live updates on 1-star KPI
+let alertCount = 0;
+setInterval(() => {
+  alertCount = (alertCount + 1) % 3;
+  const vals = ['2.3%','2.4%','2.2%'];
+  document.getElementById('kpi-dispute').textContent = vals[alertCount];
+  updateTimestamp();
+}, 8000);
+
+renderTable();
+renderCalibBars();
+renderDisputeBars();
+renderAlerts();
+updateTimestamp();
+</script>
+</body>
+</html>
